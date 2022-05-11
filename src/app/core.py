@@ -2,6 +2,7 @@ import asyncio
 import aiohttp
 import requests
 import os
+import operator
 from dotenv import load_dotenv
 
 base_url = 'https://api.vk.com/method/'
@@ -26,12 +27,6 @@ def set_group_members_count():
             "response"][0]["members_count"]
 
 
-async def get_company_name(company_group_id, session):
-    async with session.get(request_maker('groups.getById', 'group_id=' + str(company_group_id))) as response:
-        data = await response.json()
-        return data['response'][0]['name']
-
-
 async def get_user_info(session):
     while not users_stack.empty():
         current_users_ids = await users_stack.get()
@@ -50,12 +45,6 @@ async def get_user_info(session):
                                 employers[current_user_company['company']] += 1
                             else:
                                 employers[current_user_company['company']] = 1
-                        elif 'group_id' in current_user_company:
-                            company = await get_company_name(current_user_company['group_id'], session)
-                            if company in employers:
-                                employers[company] += 1
-                            else:
-                                employers[company] = 1
 
 
 async def get_group_members(session):
@@ -113,6 +102,7 @@ def start_app():
         if command == 'start':
             init()
             asyncio.run(main())
+            create_output_file()
             print('Done.\nEnter next command:')
             command = input().replace(' ', '')
         elif command == 'stop':
@@ -129,6 +119,20 @@ def start_app():
         else:
             print('Wrong command\nEnter next command:')
             command = input().replace(' ', '')
+
+
+def sort_dict(dict1: dict):
+    sorted_dict = dict(sorted(dict1.items(), key=lambda item: item[1], reverse=True))
+    return sorted_dict
+
+
+def create_output_file():
+    filepath = 'output/' + group_id + '.txt'
+    with open(filepath, 'w') as file:
+        sorted_dict = sort_dict(employers)
+        for key in sorted_dict:
+            line = key + ' : ' + str(employers[key]) + '\n'
+            file.write(line)
 
 
 async def main():
