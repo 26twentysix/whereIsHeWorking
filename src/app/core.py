@@ -2,7 +2,6 @@ import asyncio
 import aiohttp
 import requests
 import os
-import operator
 from dotenv import load_dotenv
 
 base_url = 'https://api.vk.com/method/'
@@ -114,7 +113,7 @@ def start_app():
             command = input().replace(' ', '')
         elif command == 'info':
             print('This app is parsing info about group members and output their employers in'
-                  ' output/GROUP_ID_DATE.txt\nEnter next command:')
+                  ' output/GROUP_ID.txt\nEnter next command:')
             command = input().replace(' ', '')
         else:
             print('Wrong command\nEnter next command:')
