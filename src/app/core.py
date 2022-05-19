@@ -1,7 +1,10 @@
 import asyncio
+import time
+
 import aiohttp
 import requests
 import os
+from collections import defaultdict
 from dotenv import load_dotenv
 
 base_url = 'https://api.vk.com/method/'
@@ -26,6 +29,30 @@ def set_group_members_count():
             "response"][0]["members_count"]
 
 
+async def get_company_name(user_company_group_id, session):
+    async with session.get(request_maker('groups.getById', 'group_id=' + str(user_company_group_id))) as response:
+        resp_json = await response.json()
+        user_company_name = resp_json['response'][0]['name']
+        return user_company_name
+
+
+
+async def get_user_career(current_user, session):
+    if 'career' in current_user:
+        for current_user_company in current_user['career']:
+            if 'company' in current_user_company:
+                if current_user_company['company'] in employers:
+                    employers[current_user_company['company']] += 1
+                else:
+                    employers[current_user_company['company']] = 1
+            elif 'group_id' in current_user_company:
+                company = await get_company_name(current_user_company['group_id'], session)
+                if company in employers:
+                    employers[company] += 1
+                else:
+                    employers[company] = 1
+
+
 async def get_user_info(session):
     while not users_stack.empty():
         current_users_ids = await users_stack.get()
@@ -37,17 +64,11 @@ async def get_user_info(session):
             data = await users_info.json()
             for i in range(len(data['response'])):
                 current_user = data['response'][i]
-                if 'career' in current_user:
-                    for current_user_company in current_user['career']:
-                        if 'company' in current_user_company:
-                            if current_user_company['company'] in employers:
-                                employers[current_user_company['company']] += 1
-                            else:
-                                employers[current_user_company['company']] = 1
+                await get_user_career(current_user, session)
 
 
-async def get_group_members(session):
-    global offset
+async def get_group_members(session, offset):
+    # global offset
     if offset < group_members_count:
         async with session.get(request_maker('groups.getMembers',
                                              'group_id=' + group_id + '&count=1000&offset=' + str(
@@ -55,7 +76,7 @@ async def get_group_members(session):
             data = await group_members.json()
             await users_stack.put(data['response']['items'])
         offset += 1000
-        await get_group_members(session)
+        await get_group_members(session, offset)
         await get_user_info(session)
 
 
@@ -94,13 +115,15 @@ def init():
 
 
 def start_app():
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    t0 = time.time()
+    # asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     print('To start app enter start or enter help to get available commands')
     command = input().replace(' ', '')
     while True:
         if command == 'start':
             init()
             asyncio.run(main())
+            print(time.time() - t0)
             create_output_file()
             print('Done.\nEnter next command:')
             command = input().replace(' ', '')
@@ -136,6 +159,6 @@ def create_output_file():
 
 async def main():
     async with aiohttp.ClientSession() as session:
-        task1 = get_group_members(session)
+        task1 = get_group_members(session, 0)
         task2 = get_user_info(session)
         await asyncio.gather(task1, task2)
