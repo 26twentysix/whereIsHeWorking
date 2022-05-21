@@ -14,7 +14,7 @@ api_ver = '5.131'
 def set_env_vars(dotenv_path):
     if os.path.exists(dotenv_path):
         load_dotenv(dotenv_path)
-        global access_token, api_ver
+        global access_token
         access_token = os.environ.get('ACCESS_TOKEN')
 
 
@@ -36,23 +36,6 @@ async def get_company_name(user_company_group_id, session):
         return user_company_name
 
 
-
-async def get_user_career(current_user, session):
-    if 'career' in current_user:
-        for current_user_company in current_user['career']:
-            if 'company' in current_user_company:
-                if current_user_company['company'] in employers:
-                    employers[current_user_company['company']] += 1
-                else:
-                    employers[current_user_company['company']] = 1
-            elif 'group_id' in current_user_company:
-                company = await get_company_name(current_user_company['group_id'], session)
-                if company in employers:
-                    employers[company] += 1
-                else:
-                    employers[company] = 1
-
-
 async def get_user_info(session):
     while not users_stack.empty():
         current_users_ids = await users_stack.get()
@@ -64,7 +47,36 @@ async def get_user_info(session):
             data = await users_info.json()
             for i in range(len(data['response'])):
                 current_user = data['response'][i]
-                await get_user_career(current_user, session)
+                if 'career' in current_user:
+                    for current_user_company in current_user['career']:
+                        if 'company' in current_user_company:
+                            if current_user_company['company'] in employers:
+                                employers[current_user_company['company']] += 1
+                            else:
+                                employers[current_user_company['company']] = 1
+                        elif 'group_id' in current_user_company:
+                            company = current_user_company['group_id']
+                            if company in employers:
+                                employers_id[company] += 1
+                            else:
+                                employers_id[company] = 1
+
+
+# async def get_user_friend
+
+
+def convert_emp_ids_to_name():
+    global employers
+    group_ids = str(employers_id.keys())[11:-2].replace(' ', '')
+    response = requests.get(request_maker('groups.getById', 'group_ids=' + group_ids))
+    group_names = list()
+    keys = list()
+    vals = employers_id.values()
+    for i in range(len(response.json()['response'])):
+        keys.append(response.json()['response'][i]['name'])
+    new_dict = dict(zip(keys, vals))
+    print(new_dict)
+    employers.update(new_dict)
 
 
 async def get_group_members(session, offset):
@@ -81,7 +93,7 @@ async def get_group_members(session, offset):
 
 
 def check_valid_group_link(group_link: str):
-    if group_link[:15] != 'https://vk.com/' or ' ' in group_link:
+    if not group_link.startswith('https://vk.com/') or ' ' in group_link:
         return 1
     resp = requests.get(request_maker('groups.getById', 'group_id=' + group_link[15:]))
     if 'error' in resp.json():
@@ -107,21 +119,21 @@ def set_group_id():
 def init():
     set_group_id()
     set_group_members_count()
-    global offset, employers, users_stack
-    offset = 0
+    global employers, users_stack, employers_id
+    employers_id = dict()
     employers = dict()
     users_stack = asyncio.Queue()
     print('Starting group parse...')
 
 
-def start_app():
-    t0 = time.time()
-    # asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+def run_app():
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     print('To start app enter start or enter help to get available commands')
     command = input().replace(' ', '')
     while True:
         if command == 'start':
             init()
+            t0 = time.time()
             asyncio.run(main())
             print(time.time() - t0)
             create_output_file()
@@ -150,10 +162,11 @@ def sort_dict(dict1: dict):
 
 def create_output_file():
     filepath = 'output/' + group_id + '.txt'
-    with open(filepath, 'w') as file:
+    convert_emp_ids_to_name()
+    with open(filepath, 'w', encoding='utf-8') as file:
         sorted_dict = sort_dict(employers)
         for key in sorted_dict:
-            line = key + ' : ' + str(employers[key]) + '\n'
+            line = str(key) + ' : ' + str(employers[key]) + '\n'
             file.write(line)
 
 
