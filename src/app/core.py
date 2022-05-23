@@ -1,177 +1,148 @@
 import asyncio
 import time
-
 import aiohttp
 import requests
 import os
-from collections import defaultdict
 from dotenv import load_dotenv
 
-base_url = 'https://api.vk.com/method/'
-api_ver = '5.131'
 
-
-def set_env_vars(dotenv_path):
-    if os.path.exists(dotenv_path):
-        load_dotenv(dotenv_path)
-        global access_token
-        access_token = os.environ.get('ACCESS_TOKEN')
-
-
-def request_maker(method, params):
-    return base_url + method + '?' + params + '&access_token=' + access_token + '&v=' + api_ver
-
-
-def set_group_members_count():
-    global group_members_count
-    group_members_count = \
-        requests.get(request_maker('groups.getById', 'group_id=' + group_id + '&fields=name,members_count')).json()[
-            "response"][0]["members_count"]
-
-
-async def get_company_name(user_company_group_id, session):
-    async with session.get(request_maker('groups.getById', 'group_id=' + str(user_company_group_id))) as response:
-        resp_json = await response.json()
-        user_company_name = resp_json['response'][0]['name']
-        return user_company_name
-
-
-async def get_user_info(session):
-    while not users_stack.empty():
-        current_users_ids = await users_stack.get()
-        str(current_users_ids)[1:-1].replace(' ', '')
-        async with session.get(request_maker('users.get',
-                                             'user_ids=' +
-                                             str(current_users_ids)[1:-1].replace(' ', '') +
-                                             '&fields=career')) as users_info:
-            data = await users_info.json()
-            for i in range(len(data['response'])):
-                current_user = data['response'][i]
-                if 'career' in current_user:
-                    for current_user_company in current_user['career']:
-                        if 'company' in current_user_company:
-                            if current_user_company['company'] in employers:
-                                employers[current_user_company['company']] += 1
-                            else:
-                                employers[current_user_company['company']] = 1
-                        elif 'group_id' in current_user_company:
-                            company = current_user_company['group_id']
-                            if company in employers:
-                                employers_id[company] += 1
-                            else:
-                                employers_id[company] = 1
-
-
-# async def get_user_friend
-
-
-def convert_emp_ids_to_name():
-    global employers
-    group_ids = str(employers_id.keys())[11:-2].replace(' ', '')
-    response = requests.get(request_maker('groups.getById', 'group_ids=' + group_ids))
-    group_names = list()
-    keys = list()
-    vals = employers_id.values()
-    for i in range(len(response.json()['response'])):
-        keys.append(response.json()['response'][i]['name'])
-    new_dict = dict(zip(keys, vals))
-    print(new_dict)
-    employers.update(new_dict)
-
-
-async def get_group_members(session, offset):
-    # global offset
-    if offset < group_members_count:
-        async with session.get(request_maker('groups.getMembers',
-                                             'group_id=' + group_id + '&count=1000&offset=' + str(
-                                                 offset))) as group_members:
-            data = await group_members.json()
-            await users_stack.put(data['response']['items'])
-        offset += 1000
-        await get_group_members(session, offset)
-        await get_user_info(session)
-
-
-def check_valid_group_link(group_link: str):
-    if not group_link.startswith('https://vk.com/') or ' ' in group_link:
-        return 1
-    resp = requests.get(request_maker('groups.getById', 'group_id=' + group_link[15:]))
-    if 'error' in resp.json():
-        return 2
-    return 0
-
-
-def set_group_id():
-    print('Enter group link in format "https://vk.com/GROUP_ID" without any spaces:')
-    group_link = input()
-    while not check_valid_group_link(group_link) == 0:
-        ret_code = check_valid_group_link(group_link)
-        if ret_code == 1:
-            print('Wrong format!\nEnter group link in format "https://vk.com/GROUP_ID" without any spaces:')
-        elif ret_code == 2:
-            print('Something went wrong, group doesn\'t exist\n'
-                  'Enter group link in format "https://vk.com/GROUP_ID" without any spaces:')
-        group_link = input()
-    global group_id
-    group_id = group_link[15:]
-
-
-def init():
-    set_group_id()
-    set_group_members_count()
-    global employers, users_stack, employers_id
-    employers_id = dict()
-    employers = dict()
-    users_stack = asyncio.Queue()
-    print('Starting group parse...')
-
-
-def run_app():
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    print('To start app enter start or enter help to get available commands')
-    command = input().replace(' ', '')
-    while True:
-        if command == 'start':
-            init()
-            t0 = time.time()
-            asyncio.run(main())
-            print(time.time() - t0)
-            create_output_file()
-            print('Done.\nEnter next command:')
-            command = input().replace(' ', '')
-        elif command == 'stop':
-            print('Exiting app...')
-            exit(0)
-        elif command == 'help':
-            print('Available commands:\ninfo - output information about app\nhelp - output available commands\n'
-                  'start - start app\nstop - stop app\nEnter next command:')
-            command = input().replace(' ', '')
-        elif command == 'info':
-            print('This app is parsing info about group members and output their employers in'
-                  ' output/GROUP_ID.txt\nEnter next command:')
-            command = input().replace(' ', '')
-        else:
-            print('Wrong command\nEnter next command:')
-            command = input().replace(' ', '')
-
-
-def sort_dict(dict1: dict):
-    sorted_dict = dict(sorted(dict1.items(), key=lambda item: item[1], reverse=True))
+def sort_dict(output: dict):
+    sorted_dict = dict(sorted(output.items(), key=lambda item: item[1], reverse=True))
     return sorted_dict
 
 
-def create_output_file():
-    filepath = 'output/' + group_id + '.txt'
-    convert_emp_ids_to_name()
-    with open(filepath, 'w', encoding='utf-8') as file:
-        sorted_dict = sort_dict(employers)
-        for key in sorted_dict:
-            line = str(key) + ' : ' + str(employers[key]) + '\n'
-            file.write(line)
+class App:
+    group_id = 'ural.federal.university'
+    base_url = 'https://api.vk.com/method/'
+    api_ver = '5.131'
+    access_token = ''
+    employers = dict()
+    members_k_stack = asyncio.Queue()
+    users_k_stack = asyncio.Queue()
+    employers_id = dict()
+    group_members_done_flag = False
+    all_users_set = set()
+    allowed_faculties = [2231180, 2139051]
 
+    def set_access_token(self, dotenv_path):
+        if os.path.exists(dotenv_path):
+            load_dotenv(dotenv_path)
+            self.access_token = os.environ.get('ACCESS_TOKEN')
 
-async def main():
-    async with aiohttp.ClientSession() as session:
-        task1 = get_group_members(session, 0)
-        task2 = get_user_info(session)
-        await asyncio.gather(task1, task2)
+    def request_maker(self, method, params):
+        return self.base_url + method + '?' + params + '&access_token=' + self.access_token + '&v=' + self.api_ver
+
+    def set_group_members_count(self):
+        self.group_members_count = \
+            requests.get(self.request_maker('groups.getById',
+                                            'group_id=' + self.group_id + '&fields=name,members_count')).json()[
+                "response"][0]["members_count"]
+
+    def init(self):
+        self.set_group_members_count()
+        print('Starting group parse...')
+
+    def create_output_file(self):
+        filepath = 'output/' + self.group_id + '.txt'
+        with open(filepath, 'w', encoding='utf-8') as file:
+            sorted_dict = sort_dict(self.employers)
+            for key in sorted_dict:
+                line = str(key) + ' : ' + str(self.employers[key]) + '\n'
+                file.write(line)
+
+    async def get_group_members(self, session, offset):
+        while offset < self.group_members_count:
+            async with session.get(
+                    self.request_maker('groups.getMembers', 'group_id=' + self.group_id + '&count=1000&offset=' + str(
+                        offset))) as response:
+                data = await response.json()
+                offset += 1000
+                await self.members_k_stack.put(data['response']['items'])
+                await self.get_members_friends(session)
+
+    async def get_members_friends(self, session):
+        while not self.members_k_stack.empty():
+            k_members = await self.members_k_stack.get()
+            for member in k_members:
+                pass
+                await self.get_member_friends(session, member)
+        await self.convert_user_set()
+        await self.get_users_workplace(session)
+
+    async def convert_user_set(self):
+        all_users_list = list(self.all_users_set)
+        start_pos = 0
+        while start_pos < len(all_users_list):
+            if len(all_users_list) - start_pos > 0:
+                k_users = all_users_list[start_pos:start_pos + 1000]
+            else:
+                k_users = all_users_list[start_pos:]
+            start_pos += 1000
+            await self.users_k_stack.put(list(k_users))
+            k_users.clear()
+
+    async def get_users_workplace(self, session):
+        while not self.users_k_stack.empty():
+            k_users = await self.users_k_stack.get()
+            async with session.get(self.request_maker('users.get', 'user_ids=' + str(k_users)[1:-1].replace(' ', '') +
+                                                                   '&fields=career')) as response:
+                data = await response.json()
+                for user in data['response']:
+                    if 'career' in user:
+                        for company in user['career']:
+                            if 'company' in company:
+                                if company['company'] in self.employers:
+                                    self.employers[company['company']] += 1
+                                else:
+                                    self.employers[company['company']] = 1
+                            elif 'group_id' in company:
+                                if company['group_id'] in self.employers_id:
+                                    self.employers_id[company['group_id']] += 1
+                                else:
+                                    self.employers_id[company['group_id']] = 1
+        await self.convert_group_ids(session)
+
+    async def convert_group_ids(self, session):
+        group_ids = list(self.employers_id.keys())
+        start_pos = 0
+        while start_pos < len(group_ids):
+            if len(group_ids) - start_pos > 0:
+                k_ids = group_ids[start_pos:start_pos + 500]
+            else:
+                k_ids = group_ids[start_pos:]
+            async with session.get(self.request_maker('groups.getById',
+                                                      'group_ids=' + str(k_ids)[1:-1].replace(' ', ''))) as response:
+                data = await response.json()
+                for group in data['response']:
+                    if group['name'] in self.employers:
+                        self.employers[group['name']] += self.employers_id[group['id']]
+                    else:
+                        self.employers[group['name']] = self.employers_id[group['id']]
+            start_pos += 500
+            k_ids.clear()
+
+    async def get_member_friends(self, session, member):
+        self.all_users_set.add(member)
+        async with session.get(
+                self.request_maker('friends.get', 'user_id=' + str(member) + '&fields=education')) as response:
+            data = await response.json()
+            if 'response' in data:
+                users = data['response']['items']
+                for user in users:
+                    if 'faculty' in user:
+                        if user['faculty'] in self.allowed_faculties:
+                            self.all_users_set.add(user['id'])
+
+    async def main(self):
+        async with aiohttp.ClientSession() as session:
+            task = self.get_group_members(session, 0)
+            await asyncio.gather(task)
+
+    def run_app(self):
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        self.init()
+        t0 = time.time()
+        asyncio.run(self.main())
+        self.create_output_file()
+        print(time.time() - t0)
+        print('Done.')
