@@ -1,3 +1,9 @@
+Results from parsing group vk.com/GROUP_ID
+Allowed faculties:
+Unknown faculty, Unknown university
+Group members count: N
+Group members + their friends from allowed faculties count: N + X
+
 WORKING PLACE ONE : 3
 WORKING PLACE TWO : 2
 WORKING PLACE THREE : 1
